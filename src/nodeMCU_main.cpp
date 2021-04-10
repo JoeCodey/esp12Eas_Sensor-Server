@@ -11,11 +11,13 @@
 
 #define led_motion D4  // output pin for LED triggered on motion events 
 #define motionSensor D2 // digital logic output of passive infrared sensor  
-#define IP "192.168.2.68  " 
+#define IP "192.168.2.12" 
 const char* ssid = "";
 const char* password = "" ;
 unsigned long inacitvityTime = 0 ; 
 unsigned long referenceTime = 0 ; // time of last sensor event 
+int eventId[6]= {0,1,2,3,4,5} ; // Send the same id with "Detected" and "Ended" packets  
+int indexEventId = 0 ; // eventId[index % 6 ] 
 /** Global Vars **/ // TODO?: Move to json config file ? 
 
 int motionFlag = 0 ; 
@@ -35,38 +37,7 @@ void testSleepFunction(){
   server.foo() ; 
 }
 
-void detectMotion(){
-      String detect_event = " Motion Event Detected";
-      String end_event = " Motion Event Ended";
-      int mem = 0 ; 
-      
 
-    if (motionFlag == HIGH) {   
-       referenceTime = millis() ; // motion detected -> reset time of latest event ; 
-       mem = freeMemory() ; // Check free memory   
-          // check if the input is HIGH
-        digitalWrite(led_motion, LOW);  // turn LED ON
-        if (pirState == LOW) {
-        // we have just turned on
-        Serial.println("\t--serial-- Motion detected!");
-        
-        udp.sendUDPpacket(detect_event += mem);
-        // We only want to print on the output change, not state
-        pirState = HIGH;
-        }
-    } else if( motionFlag == LOW ) { 
-        inacitvityTime = millis() - referenceTime  ; 
-        digitalWrite(led_motion, HIGH); // turn LED OFF
-        if (pirState == HIGH){
-
-        udp.sendUDPpacket(end_event); 
-        Serial.println("\t--serial-- Motion ended!");
-
-        // We only want to print on the output change, not state
-        pirState = LOW;
-        }
-    }
-}
 
 void setup(void) {
   /* seting hardware pins */
@@ -108,15 +79,66 @@ void setup(void) {
   delay(2000);  
 }
 
+void detectMotion(){
+      String detect_event = " Motion Event Detected";
+      String end_event = " Motion Event Ended";
+      int mem = 0 ; 
+      
+    if (motionFlag == HIGH) {   
+       referenceTime = millis() ; // motion detected -> reset time of latest event ; 
+       mem = freeMemory() ; // Check free memory   
+      //  Serial.print("Free memoory ->");
+      //  Serial.println(mem) ;
+      //  Serial.print("Free Memory -> ");
+      //  Serial.println(mem);
+          // check if the input is HIGH
+        digitalWrite(led_motion, LOW);  // turn LED ON
+        if (pirState == LOW) {
+        // we have just turned on
+        Serial.println("\t--serial-- Motion detected!");
+        detect_event += "id:";
+       
+  
+        udp.sendUDPpacket(detect_event + eventId[indexEventId%6]);
+        // We only want to print on the output change, not state
+        pirState = HIGH;
+        }
+    } else if( motionFlag == LOW ) { 
+       
+        inacitvityTime = millis() - referenceTime  ; 
+        digitalWrite(led_motion, HIGH); // turn LED OFF
+        if (pirState == HIGH){
+
+        udp.sendUDPpacket(end_event +"id:" + eventId[indexEventId%6]); 
+        Serial.println("\t--serial-- Motion ended! ");
+
+        // We only want to print on the output change, not state
+        pirState = LOW;
+        indexEventId += 1 ; 
+        }
+    }
+}
+
 void loop(void) {
   motionFlag = digitalRead(motionSensor);
-  if (inacitvityTime > 1000*30){
+  if (inacitvityTime > 1000*1800){
     /* no motion has been detected for 30 seconds,
      * entering deepsleep mode
      * motion sensor will trigger reset pin and wake device 
     */
+    String message = "Falling into deepsleep after " ;
+    message += inacitvityTime ;
+    message += " seconds" ; 
+    udp.sendUDPpacket(message);
+    Serial.println(message);
+    digitalWrite(led_motion,HIGH); // Ensure indicator LED is off 
     inacitvityTime = 0 ; 
-    ESP.deepSleep(5e6);   
+    ESP.deepSleep(45e6);   
+    message = "waking up after " ;
+    message += inacitvityTime ;
+    message += " seconds" ; 
+    udp.sendUDPpacket(message);
+
     //ESP.reset() ; 
   }
   detectMotion();
